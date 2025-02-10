@@ -1,0 +1,98 @@
+---
+title: "Week 3"
+author: "Murali Krishna Enugula"
+date: "2025-02-09"
+output: html_document
+---
+```{r}
+# installing necessary packages
+install.packages("geosphere")
+```
+```{r}
+#loading necessary package
+library(geosphere)
+```
+```{r}
+df <- read.csv("C:/Users/drmur/Downloads/clinics.csv", sep="|", stringsAsFactors=FALSE)
+```
+
+```{r}
+head(df)
+```
+```{r}
+# Convert lat/long columns to numeric
+df$locLat <- as.numeric(df$locLat)
+df$locLong <- as.numeric(df$locLong)
+
+# Remove rows with missing coordinates
+df <- df[!is.na(df$locLat) & !is.na(df$locLong), ]
+```
+
+```{r}
+# Step 2 - Defining haversine fuction in R
+haversine <- function(lat1, lon1, lat2, lon2) {
+  R <- 6371  # Earth radius in km
+  lat1 <- lat1 * pi / 180
+  lon1 <- lon1 * pi / 180
+  lat2 <- lat2 * pi / 180
+  lon2 <- lon2 * pi / 180
+  
+  dlat <- lat2 - lat1
+  dlon <- lon2 - lon1
+  
+  a <- sin(dlat/2)^2 + cos(lat1) * cos(lat2) * sin(dlon/2)^2
+  c <- 2 * atan2(sqrt(a), sqrt(1-a))
+  
+  return(R * c)
+}
+```
+
+```{r}
+# Step 3 - Compute Distance Using Three Approaches
+ # Using a For-Loop (iterrows() equivalent)
+start_time <- Sys.time()
+
+distances <- numeric(nrow(df))
+for (i in 1:nrow(df)) {
+  distances[i] <- haversine(40.671, -73.985, df$locLat[i], df$locLong[i])
+}
+
+df$distance <- distances
+
+execution_time_for_loop <- Sys.time() - start_time
+print(paste("For-loop execution time:", execution_time_for_loop))
+
+```
+```{r}
+# Using apply()
+start_time <- Sys.time()
+
+df$distance <- apply(df, 1, function(row) 
+  haversine(40.671, -73.985, as.numeric(row["locLat"]), as.numeric(row["locLong"]))
+)
+
+execution_time_apply <- Sys.time() - start_time
+print(paste("Apply execution time:", execution_time_apply))
+
+```
+```{r}
+#Using mapply()
+start_time <- Sys.time()
+
+df$distance <- mapply(haversine, 40.671, -73.985, df$locLat, df$locLong)
+
+execution_time_vectorized <- Sys.time() - start_time
+print(paste("Vectorized execution time:", execution_time_vectorized))
+
+```
+```{r}
+# Step 4: Tabulate Execution Times
+execution_times <- data.frame(
+  Approach = c("For-loop", "Apply (row-wise)", "Vectorized (mapply)"),
+  Execution_Time_s = c(execution_time_for_loop, execution_time_apply, execution_time_vectorized)
+)
+
+print(execution_times)
+
+```
+
