@@ -1,0 +1,97 @@
+---
+title: "Week 06 - Genetic Algorithm Assignment"
+author: "Murali"
+date: "2025-03-02"
+output: html_document
+---
+
+```{r}
+library(data.table)
+library(geosphere)
+library(GA)
+library(purrr)
+library(sf)
+
+## Load the population data
+pop.data <- data.table::fread("Mo_pop_Sim.csv")
+str(pop.data)
+frac <- 0.0001
+small.data <- pop.data[sample(1:nrow(pop.data),
+                               size = round(nrow(pop.data) * frac),
+                               replace = F), ## extract a sample of randomlychosen 1% rows
+                        ]  ## and choose all columns
+
+## Load the FQHC data
+data_path <- 'MO_2018_Federally_Qualified_Health_Center_Locations'
+fqhc.data <- data.table(as.data.frame(st_read(data_path,
+                     'MO_2018_Federally_Qualified_Health_Center_Locations')))
+```
+
+
+#One approach can be to use the average closeness of a location from all of the residences - those locations that are the closest to all of the residences, on average, are the ones that are more easily accessible, and therefore would/should be selected. What is the assumption that is implicit here?
+
+```{r}
+# Calculate Average Closeness (Mean Distance to Residences)
+average_distance <- function(fqhc) {
+  mean(distHaversine(matrix(c(small.data$long, small.data$lat), ncol = 2),
+                      c(fqhc$Longitude, fqhc$Latitude)))
+}
+
+fqhc.data[, avg_dist := sapply(1:.N, function(i) average_distance(fqhc.data[i]))]
+```
+
+
+```{r}
+population_within_radius <- function(fqhc) {
+  sum(distHaversine(matrix(c(small.data$long, small.data$lat), ncol = 2),
+                    c(fqhc$Longitude, fqhc$Latitude)) <= 48280)
+}
+```
+
+```{r}
+fqhc.data[, pop_density := sapply(1:.N, function(i) population_within_radius(fqhc.data[i]))]
+
+fqhc.data[, fitness_score := rank(avg_dist, ties.method = "first") + rank(-pop_density, ties.method = "first")]
+
+top_fqhc <- fqhc.data[order(fitness_score)][1:8]
+print(top_fqhc[, .(Facility, City, avg_dist, pop_density, fitness_score)])
+```
+
+```{r}
+# Genetic Algorithm Fitness Function
+fitness_function <- function(indices) {
+  selected_fqhc <- fqhc.data[indices, ]
+  total_population <- sum(selected_fqhc$pop_density)
+  return(total_population)
+}
+
+# Run Genetic Algorithm
+set.seed(123)  # For reproducibility
+ga_result <- ga(
+  type = "permutation",
+  fitness = function(indices) fitness_function(indices),
+  lower = 1,
+  upper = nrow(fqhc.data),
+  popSize = 50,   # Population size
+  maxiter = 100,  # Number of generations
+  run = 50,       # Convergence criteria
+  pmutation = 0.2,
+  elitism = 2,
+  names = fqhc.data$Facility
+)
+
+# Get best solution
+best_indices <- ga_result@solution[1,]
+best_fqhc <- fqhc.data[best_indices, ]
+print(best_fqhc[, .(Facility, City, pop_density)])
+
+```
+
+
+
+
+Population density within a thirty-mile radius will determine my first priority when deciding which FQHC facilities to introduce specialized mental health services. The main reason this selection exists because mental health services work best by reaching maximum need populations. The services will maximize their impact through selected facilities based in densely populated areas because we have chosen this area as our main selection criteria. Health service decisions based on this strategy prioritize community segments with higher need levels over standard travel convenience for everyone. Average closeness calculations provide general accessibility scores yet service demand may not be driven by these metrics because rural areas with low population density remain under consideration. Population density stands as the superior method in public health planning because it allows service provision in high-need areas where maximum impact can be achieved.
+
+This strategy depends on the premise that persons residing near FQHCs will choose those sites as their main service point rather than locations farther distant from their homes. The selected 30-mile distance derives from operational limitations which serve underserved communities who experience restricted transportation availability. This model includes a hidden assumption about mental health service consumption since population density is directly linked to overall service needs across defined areas. Certain population characteristics which include income level and mental health conditions prevalence do not always correlate with demand patterns. Considering the existing data population density proves to be a suitable method for detecting regions of high service need.
+
+The fitness function evaluates Fleury Quality Health Care locations by calculating the total residences inside a 30-mile radius through counting residential points from the sampled population dataset. The locations guarantee the highest population density when measured inside the specified radius thus becoming optimal. This metric can be maximized simplistically because it allows FQHCs to extend their service capacity to more residents located reasonably close to specific facilities. The selection process focuses on eight FQHCs with the highest density population since this approach maximizes resource distribution to locations that will produce the highest impact.
